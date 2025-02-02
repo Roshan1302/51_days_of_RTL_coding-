@@ -15,45 +15,39 @@ module async_fifo #(parameter fd = 8, fw = 8, add_size = 3)
     output reg underflow
 );
     reg [add_size:0] wptr, rptr;
-    wire [add_size:0] c_wptr, c_rptr; // Gray coded output
+    wire [add_size:0] c_wptr, c_rptr; // Gray coded pointers
     reg [add_size:0] c_wptr_q1, c_wptr_q2, c_rptr_q1, c_rptr_q2;
     reg [fw-1:0] mem[fd-1:0];
 
     // Writing data into FIFO
-    always @(posedge w_clk) 
-    begin
+    always @(posedge w_clk) begin
         if (rst) 
             wptr <= 0;
-        else 
-        begin
-            if (wr && !full) 
-            begin
-                mem[wptr[add_size-1:0]] <= wdata; // Only use the lower bits for indexing
-                wptr <= (wptr + 1);
+        else begin
+            if (wr && !full) begin
+                mem[wptr[add_size-1:0]] <= wdata; // Use lower bits for addressing
+                wptr <= wptr + 1; // Increment in binary
             end
         end
     end
 
     // Read operation
-    always @(posedge r_clk) 
-    begin
+    always @(posedge r_clk) begin
         if (rst)
             rptr <= 0; 
-        else 
-        begin
-            if (rd && !empty) 
-            begin
-                rdata <= mem[rptr[add_size-1:0]]; // Only use the lower bits for indexing
-                rptr <= (rptr + 1);
+        else begin
+            if (rd && !empty) begin
+                rdata <= mem[rptr[add_size-1:0]]; // Use lower bits for addressing
+                rptr <= rptr + 1; // Increment in binary
             end
         end
     end
 
-    // Write and read binary to gray
+    // Convert binary to Gray code
     assign c_wptr = wptr ^ (wptr >> 1);
     assign c_rptr = rptr ^ (rptr >> 1);
 
-    // Two stage sync for write pointer
+    // Synchronizing write pointer to read clock
     always @(posedge r_clk) begin
         if (rst) begin
             c_wptr_q1 <= 0;
@@ -64,7 +58,7 @@ module async_fifo #(parameter fd = 8, fw = 8, add_size = 3)
         end
     end
 
-    // Two stage sync for read pointer
+    // Synchronizing read pointer to write clock
     always @(posedge w_clk) begin
         if (rst) begin
             c_rptr_q1 <= 0;
@@ -75,26 +69,23 @@ module async_fifo #(parameter fd = 8, fw = 8, add_size = 3)
         end
     end
 
-    // Empty and full condition
-    assign empty = (rptr == wptr);
-//    assign full = (~{wptr[add_size], wptr[add_size-1], wptr[add_size-2], wptr[add_size-3]} == rptr);
-assign full = (wptr == {1'b1, {add_size{1'b0}}}) && (rptr == 0);
+    // Empty and full condition (using synchronized pointers)
+    assign empty = (c_rptr_q2 == c_wptr_q2);
+    assign full  = (c_wptr_q2 == {~c_rptr_q2[add_size], c_rptr_q2[add_size-1:0]});
 
     // Overflow and underflow conditions
     always @(posedge w_clk) begin
-        if (rst) begin
+        if (rst)
             overflow <= 0;
-        end else begin
+        else
             overflow <= (full && wr);
-        end
     end
 
     always @(posedge r_clk) begin
-        if (rst) begin
+        if (rst)
             underflow <= 0;
-        end else begin
+        else
             underflow <= (empty && rd);
-        end
     end
 
 endmodule
